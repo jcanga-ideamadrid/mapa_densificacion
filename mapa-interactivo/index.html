@@ -6,6 +6,9 @@
 <title>Estaciones con potencial de crecimiento</title>
 <!-- MapLibre GL JS, versión fijada (no cambia sola). -->
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <style>
   /* Colores en un solo sitio: cámbialos aquí. */
@@ -26,9 +29,14 @@
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; }
+  html, body, button, input, select, textarea,
+  .maplibregl-popup-content, .maplibregl-ctrl,
+  .maplibregl-ctrl button, .maplibregl-ctrl-attrib, .maplibregl-ctrl-scale {
+    font-family: 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
   body {
     background: var(--fondo); color: var(--texto);
-    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font: 14px/1.4 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     display: grid; grid-template-rows: 1fr auto;
   }
   #mapa { position: relative; min-height: 0; }
@@ -71,7 +79,7 @@
   }
   footer strong { color: var(--texto); }
   /* Ventanas emergentes */
-  .maplibregl-popup-content { font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--texto); padding: 10px 12px; max-width: 340px; }
+  .maplibregl-popup-content { font: 13px/1.4 'Inter', system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--texto); padding: 10px 12px; max-width: 340px; }
   .pop h2 { font-size: 14px; margin: 0 0 2px; }
   .pop .lugar { color: var(--texto-2); font-size: 12px; margin-bottom: 6px; }
   .pop .destacado { background: #f4f3ef; border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; }
@@ -525,6 +533,24 @@ async function iniciar() {
   mapa.addLayer({ id: 'pau-relleno', type: 'fill', source: 'pau', paint: { 'fill-color': colorPau, 'fill-opacity': 1 } }, primerRotulo);
   mapa.addLayer({ id: 'pau-halo', type: 'line', source: 'pau', paint: { 'line-color': '#ffffff', 'line-width': 4.5 } }, primerRotulo);
   mapa.addLayer({ id: 'pau-linea', type: 'line', source: 'pau', paint: { 'line-color': colorPauContorno, 'line-width': 2.5, 'line-dasharray': [2, 1] } }, primerRotulo);
+  // Etiquetas de PAU: se prioriza el nombre y se recurre al grupo o código si falta.
+  mapa.addLayer({ id: 'pau-etiquetas', type: 'symbol', source: 'pau',
+    layout: {
+      'symbol-placement': 'point',
+      'text-field': ['coalesce', ['get', 'name'], ['get', 'group_label'], ['get', 'code']],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9, 12, 11, 15, 13],
+      'text-max-width': 12,
+      'text-allow-overlap': false,
+      'text-optional': true,
+      'text-padding': 3,
+    },
+    paint: {
+      'text-color': '#594714',
+      'text-halo-color': '#fffdf4',
+      'text-halo-width': 1.6,
+      'text-halo-blur': 0.3,
+    } });
 
   // Estaciones: tamaño según suelo vacante a 800 m; gradiente de salidas con tope verde en 50/h.
   const maxSueloVacanteEstaciones = maximoPropiedad(estaciones.features, 'suelo_vacante_800m_ha') || 1;
@@ -538,6 +564,26 @@ async function iniciar() {
           0, '#e76f2e', 25, '#f4d03f', 50, '#18864b']],
       'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5,
       'circle-opacity': 0.92,
+    } });
+  // Etiquetas solo para estaciones con más de 40 ha de suelo vacante en su radio de 800 m.
+  mapa.addLayer({ id: 'estaciones-etiquetas', type: 'symbol', source: 'estaciones',
+    filter: ['>', ['to-number', ['get', 'suelo_vacante_800m_ha'], 0], 40],
+    layout: {
+      'text-field': ['get', 'nombre'],
+      'text-font': ['Noto Sans Regular'],
+      'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9, 12, 11, 15, 13],
+      'text-anchor': 'bottom',
+      'text-offset': [0, -0.65],
+      'text-max-width': 10,
+      'text-allow-overlap': false,
+      'text-optional': true,
+      'text-padding': 2,
+    },
+    paint: {
+      'text-color': '#173b2a',
+      'text-halo-color': '#ffffff',
+      'text-halo-width': 1.8,
+      'text-halo-blur': 0.3,
     } });
 
   anadirCapasPropias(mapa);
@@ -590,9 +636,9 @@ async function iniciar() {
 
   // Casillas de capas.
   const grupos = {
-    'ver-pau': ['pau-relleno', 'pau-halo', 'pau-linea'],
+    'ver-pau': ['pau-relleno', 'pau-halo', 'pau-linea', 'pau-etiquetas'],
     'ver-actividad': ['actividad-relleno', 'actividad-halo', 'actividad-resto', 'actividad-transicion', 'actividad-sin-plan'],
-    'ver-estaciones': ['estaciones'],
+    'ver-estaciones': ['estaciones', 'estaciones-etiquetas'],
   };
   for (const [casilla, capas] of Object.entries(grupos)) {
     const input = document.getElementById(casilla);
@@ -604,19 +650,19 @@ async function iniciar() {
   // Clic: se abre lo que esté dibujado más arriba (estación > PAU > suelo de actividad > sección).
   const popup = new maplibregl.Popup({ maxWidth: '360px' });
   mapa.on('click', e => {
-    const visibles = ['estaciones', 'actividad-relleno', 'pau-relleno', 'secciones-relleno']
+    const visibles = ['estaciones-etiquetas', 'estaciones', 'actividad-relleno', 'pau-etiquetas', 'pau-relleno', 'secciones-relleno']
       .filter(id => mapa.getLayoutProperty(id, 'visibility') !== 'none');
     const f = mapa.queryRenderedFeatures(e.point, { layers: visibles })[0];
     if (!f) return;
     const p = f.properties;
     let html;
-    if (f.layer.id === 'estaciones') {
+    if (f.layer.id === 'estaciones' || f.layer.id === 'estaciones-etiquetas') {
       html = popupCapa(p.nombre, p.operadores, p, CAMPOS_ESTACION,
         'Suelo vacante: Comunidad de Madrid, Suelo Vacante y Ocupado 2026 (CC BY 4.0). Salidas: Powered by CRTM, Renfe Data. Círculos solapados: no se suman entre estaciones.');
     } else if (f.layer.id === 'actividad-relleno') {
       html = popupCapa(p.nombre, `${p.municipio} · ${p.codigo_planeamiento ?? ''}`, p, CAMPOS_ACTIVIDAD,
         'Xamfrà, método propio sobre planeamiento refundido 2025 (Comunidad de Madrid), PGOUM 97 y VEDA (Ayuntamiento de Madrid), CC BY 4.0, y Catastro. No dice que se pueda recalificar.');
-    } else if (f.layer.id === 'pau-relleno') {
+    } else if (f.layer.id === 'pau-relleno' || f.layer.id === 'pau-etiquetas') {
       html = popupCapa(p.name, p.municipality, p, CAMPOS_PAU,
         'Ayuntamiento de Madrid (VEDA jul. 2026, PGOUM 97) y Comunidad de Madrid (refundido 2025, suelo vacante 2026), CC BY 4.0. Selección PAU: Xamfrà (conservadora).');
     } else {
@@ -625,7 +671,7 @@ async function iniciar() {
     }
     popup.setLngLat(e.lngLat).setHTML(html).addTo(mapa);
   });
-  for (const id of ['estaciones', 'actividad-relleno', 'pau-relleno', 'secciones-relleno']) {
+  for (const id of ['estaciones', 'estaciones-etiquetas', 'actividad-relleno', 'pau-relleno', 'pau-etiquetas', 'secciones-relleno']) {
     mapa.on('mouseenter', id, () => { mapa.getCanvas().style.cursor = 'pointer'; });
     mapa.on('mouseleave', id, () => { mapa.getCanvas().style.cursor = ''; });
   }
