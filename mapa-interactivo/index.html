@@ -18,8 +18,9 @@
     --texto-3: #6f6e69;
     --borde: #e2e0da;
     --sin-dato: #d9d7d0;
-    --pau: #eb6834;
+    --pau: #d6a800;
     --actividad: #6250d6;
+    --actividad-envejecido: #26834a;
     --estacion: #0b0b0b;
   }
   * { box-sizing: border-box; }
@@ -54,7 +55,7 @@
   .capa { display: grid; grid-template-columns: 18px 30px 1fr; gap: 6px; align-items: center; font-size: 13px; margin: 4px 0; cursor: pointer; }
   .capa input { margin: 0; }
   .linea { height: 0; border-top: 3px solid; }
-  .punto { width: 14px; height: 14px; border-radius: 50%; background: linear-gradient(90deg, #e76f2e 0%, #f4d03f 50%, #2e9d58 100%); border: 2px solid #fff; box-shadow: 0 0 0 1px #777; justify-self: center; }
+  .punto { width: 14px; height: 14px; border-radius: 50%; background: linear-gradient(90deg, #e76f2e 0%, #f4d03f 50%, #18864b 100%); border: 2px solid #fff; box-shadow: 0 0 0 1px #777; justify-self: center; }
   #indice-config { margin: 12px 0; }
   #indice-config .fila-peso { display: grid; grid-template-columns: 1fr 86px; gap: 8px; align-items: center; margin: 6px 0; font-size: 13px; }
   #indice-config input { width: 100%; min-width: 0; padding: 5px 6px; border: 1px solid var(--borde); border-radius: 5px; font: inherit; font-variant-numeric: tabular-nums; }
@@ -112,7 +113,7 @@
       <label class="capa"><input type="checkbox" id="ver-actividad"><span class="linea" style="border-color: var(--actividad)"></span>Suelo de actividad en transición</label>
       <div class="sublista">
         <div><span class="linea" style="border-color: var(--actividad)"></span>En transición (planeamiento en marcha)</div>
-        <div><span class="linea" style="border-color: var(--actividad); border-top-style: dashed"></span>Envejecido y junto a estación, sin planeamiento</div>
+        <div><span class="linea" style="border-color: var(--actividad-envejecido); border-top-style: dashed"></span>Envejecido y junto a estación, sin planeamiento</div>
         <div><span class="linea" style="border-color: var(--actividad); border-top-width: 1px"></span>Resto (parciales, ninguna, desconocida)</div>
       </div>
       <label class="capa"><input type="checkbox" id="ver-estaciones" checked><span class="punto"></span>Estaciones (tamaño: suelo vacante a 800 m; color: salidas en hora punta)</label>
@@ -223,7 +224,7 @@ const VARIABLES = [
     calculada: true,
     descripcion: 'Índice dinámico de 0 a 100 que combina salidas por hora punta, empleos alcanzables en 45 minutos y proximidad a zonas verdes.',
     fuente: 'Cálculo en el navegador a partir de salidas_hora_punta, empleos_45min y dist_verde_m. Pesos configurables en este panel.',
-    aviso: 'Cada componente se normaliza entre 0 y 100 para toda la Comunidad de Madrid. En zonas verdes, menor distancia obtiene mejor puntuación.' },
+    aviso: 'Los componentes se normalizan entre 0 y 100 para toda la Comunidad de Madrid. En zonas verdes, menor distancia obtiene mejor puntuación.' },
 ];
 
 // Si añades una capa tuya, hazlo aquí (se llama cuando el mapa ya está listo). Ejemplo en el LEEME.
@@ -266,14 +267,25 @@ function quintiles(valores) {
   return [...new Set(cortes)].filter(c => c > v[0] && c < v[v.length - 1]);
 }
 
-// Clases de una variable: cortes, colores, etiquetas de la leyenda y recuento de secciones.
+// Clases de una variable. El índice tiene cinco tramos fijos: 0-20 transparente
+// y cuatro gamas cromáticas progresivamente más oscuras entre 20 y 100.
 function clasesDe(variable, features) {
   const valores = features.map(f => f.properties?.[variable.id])
     .filter(x => x !== null && x !== undefined && x !== '')
-    .map(Number).filter(x => Number.isFinite(x));
+    .map(Number).filter(Number.isFinite);
+
+  if (variable.id === 'indice_idoneidad') {
+    const cortes = [20, 40, 60, 80];
+    const colores = ['rgba(0, 0, 0, 0)', '#e7f0fb', '#a9c8eb', '#568fcf', '#174f91'];
+    const etiquetas = ['0–20', '20–40', '40–60', '60–80', '80–100'];
+    const recuento = new Array(5).fill(0);
+    for (const x of valores) recuento[cortes.filter(c => x >= c).length]++;
+    return { cortes, colores, etiquetas, recuento, sinDato: features.length - valores.length, transparentePrimera: true };
+  }
+
   const cortes = variable.cortes ?? quintiles(valores);
   const n = cortes.length + 1;
-  let colores = PALETA.slice(PALETA.length - n);           // si hay menos clases, se usan los tonos más oscuros
+  let colores = PALETA.slice(PALETA.length - n);
   if (variable.invertir) colores = [...colores].reverse();
   const min = valores.length ? Math.min(...valores) : 0;
   const max = valores.length ? Math.max(...valores) : 0;
@@ -287,7 +299,7 @@ function clasesDe(variable, features) {
     if (!valores.length) {
       etiquetas.push('Sin valores');
     } else if (d === 0) {
-      const alto = i === n - 1 ? hasta : hasta - 1;     // enteros: rangos cerrados (2–3, 4–7…)
+      const alto = i === n - 1 ? hasta : hasta - 1;
       etiquetas.push(desde === alto ? formatear(desde, 0) : `${formatear(desde, 0)}–${formatear(alto, 0)}`);
     } else if (i === 0 && desde === 0 && cortes[0] <= 0.01) {
       etiquetas.push('0');
@@ -295,20 +307,24 @@ function clasesDe(variable, features) {
       etiquetas.push(`${formatear(desde, d)} – ${formatear(hasta, d)}`);
     }
   }
-  const sinDato = features.length - valores.length;
-  return { cortes, colores, etiquetas, recuento, sinDato };
+  return { cortes, colores, etiquetas, recuento, sinDato: features.length - valores.length };
 }
 
-// Expresión de color de MapLibre: gris si no hay dato; si lo hay, el color de su clase.
+// Expresión MapLibre: gris sin dato, transparente para índice 0-20, y clases sucesivas.
 function expresionColor(variable, clases) {
-  const paso = ['step', ['to-number', ['get', variable.id]], clases.colores[0]];
+  const colorBase = clases.colores[0] ?? COLOR_SIN_DATO;
+  const paso = ['step', ['to-number', ['get', variable.id]], colorBase];
   clases.cortes.forEach((c, i) => paso.push(c, clases.colores[i + 1]));
   return ['case', ['==', ['get', variable.id], null], COLOR_SIN_DATO, paso];
 }
 
 function pintarLeyenda(variable, clases) {
-  const filas = clases.etiquetas.map((t, i) =>
-    `<div class="clase"><span class="muestra" style="background:${clases.colores[i]}"></span><span>${t}</span><span class="n">${formatear(clases.recuento[i], 0)}</span></div>`);
+  const filas = clases.etiquetas.map((t, i) => {
+    const muestraStyle = clases.transparentePrimera && i === 0
+      ? 'background:transparent;border:1px dashed #8b8b8b;'
+      : `background:${clases.colores[i]}`;
+    return `<div class="clase"><span class="muestra" style="${muestraStyle}"></span><span>${t}</span><span class="n">${formatear(clases.recuento[i], 0)}</span></div>`;
+  });
   if (clases.sinDato > 0) {
     const texto = variable.soloMadrid ? 'Sin dato o fuera de Madrid ciudad' : 'Sin dato';
     filas.push(`<div class="clase"><span class="muestra" style="background:${COLOR_SIN_DATO}"></span><span>${texto}</span><span class="n">${formatear(clases.sinDato, 0)}</span></div>`);
@@ -372,7 +388,7 @@ const CAMPOS_ESTACION = [
   ['Suelo vacante a 500 m', 'suelo_vacante_500m_ha', 2, 'ha'],
 ];
 
-// ---------------------------------------------------------------- índice de idoneidad (cálculo local; no se modifica ningún fichero de datos)
+// ---------------------------------------------------------------- índice de idoneidad (calculado en memoria; no añade columnas a los ficheros)
 
 const CAMPOS_INDICE = {
   transporte: 'salidas_hora_punta',
@@ -384,14 +400,6 @@ function numeroValido(valor) {
   if (valor === null || valor === undefined || valor === '') return null;
   const n = Number(valor);
   return Number.isFinite(n) ? n : null;
-}
-
-function normalizarComponente(valor, min, max, invertir = false) {
-  if (valor === null) return null;
-  // Si toda la Comunidad tiene el mismo valor, no existe gradiente: se asigna el punto neutro.
-  if (max === min) return 50;
-  const n = ((valor - min) / (max - min)) * 100;
-  return invertir ? 100 - n : n;
 }
 
 function calcularIndiceIdoneidad(features, pesos) {
@@ -412,17 +420,19 @@ function calcularIndiceIdoneidad(features, pesos) {
     let sumaPonderada = 0;
     let pesoDisponible = 0;
     for (const def of definiciones) {
-      if (!(def.peso > 0) || !rangos[def.clave]) continue;
+      const rango = rangos[def.clave];
+      if (!(def.peso > 0) || !rango) continue;
       const valor = numeroValido(feature.properties?.[def.clave]);
       if (valor === null) continue;
-      const rango = rangos[def.clave];
-      const normalizado = normalizarComponente(valor, rango.min, rango.max, def.invertir);
-      sumaPonderada += normalizado * def.peso;
+      const normalizado = rango.max === rango.min
+        ? 50
+        : ((valor - rango.min) / (rango.max - rango.min)) * 100;
+      const puntuacion = def.invertir ? 100 - normalizado : normalizado;
+      sumaPonderada += puntuacion * def.peso;
       pesoDisponible += def.peso;
     }
-    // Propiedad efímera en memoria para MapLibre: nunca se escribe en CSV ni GeoJSON de origen.
     feature.properties.indice_idoneidad = pesoDisponible > 0
-      ? Math.round((sumaPonderada / pesoDisponible) * 10) / 10
+      ? Math.max(0, Math.min(100, Math.round((sumaPonderada / pesoDisponible) * 10) / 10))
       : null;
   }
 }
@@ -491,7 +501,7 @@ async function iniciar() {
   const colorActividad = getComputedStyle(document.documentElement).getPropertyValue('--actividad').trim();
   mapa.addSource('actividad', { type: 'geojson', data: actividad });
   mapa.addLayer({ id: 'actividad-relleno', type: 'fill', source: 'actividad', layout: { visibility: 'none' },
-    paint: { 'fill-color': colorActividad, 'fill-opacity': 0.06 } }, primerRotulo);
+    paint: { 'fill-color': ['case', ['==', ['get', 'clase'], 'ready_no_plan'], '#26834a', colorActividad], 'fill-opacity': 0.10 } }, primerRotulo);
   mapa.addLayer({ id: 'actividad-halo', type: 'line', source: 'actividad', layout: { visibility: 'none' },
     filter: ['in', ['get', 'clase'], ['literal', ['in_transition', 'ready_no_plan']]],
     paint: { 'line-color': '#ffffff', 'line-width': 5 } }, primerRotulo);
@@ -501,19 +511,17 @@ async function iniciar() {
   mapa.addLayer({ id: 'actividad-transicion', type: 'line', source: 'actividad', layout: { visibility: 'none' },
     filter: ['==', ['get', 'clase'], 'in_transition'], paint: { 'line-color': colorActividad, 'line-width': 3 } }, primerRotulo);
   mapa.addLayer({ id: 'actividad-sin-plan', type: 'line', source: 'actividad', layout: { visibility: 'none' },
-    filter: ['==', ['get', 'clase'], 'ready_no_plan'], paint: { 'line-color': colorActividad, 'line-width': 3, 'line-dasharray': [2, 1] } }, primerRotulo);
+    filter: ['==', ['get', 'clase'], 'ready_no_plan'], paint: { 'line-color': '#26834a', 'line-width': 3, 'line-dasharray': [2, 1] } }, primerRotulo);
 
-  // PAU: contorno naranja discontinuo con halo blanco.
+  // PAU: contorno amarillo discontinuo con halo blanco.
   const colorPau = getComputedStyle(document.documentElement).getPropertyValue('--pau').trim();
   mapa.addSource('pau', { type: 'geojson', data: pau });
   mapa.addLayer({ id: 'pau-relleno', type: 'fill', source: 'pau', paint: { 'fill-color': colorPau, 'fill-opacity': 0.05 } }, primerRotulo);
   mapa.addLayer({ id: 'pau-halo', type: 'line', source: 'pau', paint: { 'line-color': '#ffffff', 'line-width': 4.5 } }, primerRotulo);
   mapa.addLayer({ id: 'pau-linea', type: 'line', source: 'pau', paint: { 'line-color': colorPau, 'line-width': 2.5, 'line-dasharray': [2, 1] } }, primerRotulo);
 
-  // Estaciones: tamaño según suelo vacante a 800 m; color según salidas en hora punta.
-  // Los extremos del gradiente se calculan con los datos que llegan al navegador.
+  // Estaciones: tamaño según suelo vacante a 800 m; gradiente de salidas con tope verde en 50/h.
   const maxSueloVacanteEstaciones = maximoPropiedad(estaciones.features, 'suelo_vacante_800m_ha') || 1;
-  const maxSalidasEstaciones = maximoPropiedad(estaciones.features, 'salidas_hora_punta') || 1;
   mapa.addSource('estaciones', { type: 'geojson', data: estaciones });
   mapa.addLayer({ id: 'estaciones', type: 'circle', source: 'estaciones',
     paint: {
@@ -521,7 +529,7 @@ async function iniciar() {
         0, 3, maxSueloVacanteEstaciones, 19],
       'circle-color': ['case', ['==', ['get', 'salidas_hora_punta'], null], COLOR_SIN_DATO,
         ['interpolate', ['linear'], ['to-number', ['get', 'salidas_hora_punta'], 0],
-          0, '#e76f2e', maxSalidasEstaciones / 2, '#f4d03f', maxSalidasEstaciones, '#2e9d58']],
+          0, '#e76f2e', 25, '#f4d03f', 50, '#18864b']],
       'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5,
       'circle-opacity': 0.92,
     } });
@@ -545,11 +553,7 @@ async function iniciar() {
       const valor = Number(input.value);
       return Number.isFinite(valor) ? Math.max(0, Math.min(100, valor)) : 0;
     };
-    return {
-      transporte: peso(inputPesoTransporte),
-      empleo: peso(inputPesoEmpleo),
-      verde: peso(inputPesoVerde),
-    };
+    return { transporte: peso(inputPesoTransporte), empleo: peso(inputPesoEmpleo), verde: peso(inputPesoVerde) };
   }
 
   let variableActiva = null;
@@ -566,7 +570,6 @@ async function iniciar() {
     totalPesos.textContent = `${formatear(total, 0)} %`;
     totalPesos.style.color = total === 100 ? 'var(--texto)' : '#b45309';
     calcularIndiceIdoneidad(secciones.features, pesos);
-    // Actualiza la fuente en memoria y vuelve a pintar sin recargar la página.
     mapa.getSource('secciones').setData(secciones);
     aplicarVariable(selector.value);
   }
