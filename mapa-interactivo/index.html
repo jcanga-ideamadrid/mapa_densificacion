@@ -18,7 +18,8 @@
     --texto-3: #6f6e69;
     --borde: #e2e0da;
     --sin-dato: #d9d7d0;
-    --pau: #d6a800;
+    --pau: #f4e8ad;
+    --pau-contorno: #c49a18;
     --actividad: #6250d6;
     --actividad-envejecido: #26834a;
     --estacion: #0b0b0b;
@@ -109,7 +110,7 @@
 
     <fieldset>
       <legend>Capas</legend>
-      <label class="capa"><input type="checkbox" id="ver-pau" checked><span class="linea" style="border-color: var(--pau); border-top-style: dashed"></span>PAU (en curso y acabados) y urbanizable programado</label>
+      <label class="capa"><input type="checkbox" id="ver-pau" checked><span class="linea" style="border-color: var(--pau-contorno); border-top-style: dashed"></span>PAU (en curso y acabados) y urbanizable programado</label>
       <label class="capa"><input type="checkbox" id="ver-actividad"><span class="linea" style="border-color: var(--actividad)"></span>Suelo de actividad en transición</label>
       <div class="sublista">
         <div><span class="linea" style="border-color: var(--actividad)"></span>En transición (planeamiento en marcha)</div>
@@ -267,8 +268,8 @@ function quintiles(valores) {
   return [...new Set(cortes)].filter(c => c > v[0] && c < v[v.length - 1]);
 }
 
-// Clases de una variable. El índice tiene cinco tramos fijos: 0-20 transparente
-// y cuatro gamas cromáticas progresivamente más oscuras entre 20 y 100.
+// Clases de una variable. El índice tiene cinco tramos fijos: 0-20 blanco
+// y cuatro tonos de la paleta azul original, progresivamente más oscuros entre 20 y 100.
 function clasesDe(variable, features) {
   const valores = features.map(f => f.properties?.[variable.id])
     .filter(x => x !== null && x !== undefined && x !== '')
@@ -276,11 +277,11 @@ function clasesDe(variable, features) {
 
   if (variable.id === 'indice_idoneidad') {
     const cortes = [20, 40, 60, 80];
-    const colores = ['rgba(0, 0, 0, 0)', '#e7f0fb', '#a9c8eb', '#568fcf', '#174f91'];
+    const colores = ['#ffffff', ...PALETA.slice(1)];
     const etiquetas = ['0–20', '20–40', '40–60', '60–80', '80–100'];
     const recuento = new Array(5).fill(0);
     for (const x of valores) recuento[cortes.filter(c => x >= c).length]++;
-    return { cortes, colores, etiquetas, recuento, sinDato: features.length - valores.length, transparentePrimera: true };
+    return { cortes, colores, etiquetas, recuento, sinDato: features.length - valores.length, blancoPrimera: true };
   }
 
   const cortes = variable.cortes ?? quintiles(valores);
@@ -310,7 +311,7 @@ function clasesDe(variable, features) {
   return { cortes, colores, etiquetas, recuento, sinDato: features.length - valores.length };
 }
 
-// Expresión MapLibre: gris sin dato, transparente para índice 0-20, y clases sucesivas.
+// Expresión MapLibre: gris sin dato, blanco para índice 0-20 y clases azules sucesivas.
 function expresionColor(variable, clases) {
   const colorBase = clases.colores[0] ?? COLOR_SIN_DATO;
   const paso = ['step', ['to-number', ['get', variable.id]], colorBase];
@@ -320,8 +321,8 @@ function expresionColor(variable, clases) {
 
 function pintarLeyenda(variable, clases) {
   const filas = clases.etiquetas.map((t, i) => {
-    const muestraStyle = clases.transparentePrimera && i === 0
-      ? 'background:transparent;border:1px dashed #8b8b8b;'
+    const muestraStyle = clases.blancoPrimera && i === 0
+      ? 'background:#ffffff;border:1px solid #9b9b9b;'
       : `background:${clases.colores[i]}`;
     return `<div class="clase"><span class="muestra" style="${muestraStyle}"></span><span>${t}</span><span class="n">${formatear(clases.recuento[i], 0)}</span></div>`;
   });
@@ -499,9 +500,13 @@ async function iniciar() {
 
   // Suelo de actividad en transición: un solo color, tres estilos de línea (no depende solo del color).
   const colorActividad = getComputedStyle(document.documentElement).getPropertyValue('--actividad').trim();
+  const colorActividadEnvejecido = getComputedStyle(document.documentElement).getPropertyValue('--actividad-envejecido').trim();
   mapa.addSource('actividad', { type: 'geojson', data: actividad });
   mapa.addLayer({ id: 'actividad-relleno', type: 'fill', source: 'actividad', layout: { visibility: 'none' },
-    paint: { 'fill-color': ['case', ['==', ['get', 'clase'], 'ready_no_plan'], '#26834a', colorActividad], 'fill-opacity': 0.10 } }, primerRotulo);
+    paint: {
+      'fill-color': ['case', ['==', ['get', 'clase'], 'ready_no_plan'], colorActividadEnvejecido, colorActividad],
+      'fill-opacity': ['case', ['in', ['get', 'clase'], ['literal', ['in_transition', 'ready_no_plan']]], 1, 0.10]
+    } }, primerRotulo);
   mapa.addLayer({ id: 'actividad-halo', type: 'line', source: 'actividad', layout: { visibility: 'none' },
     filter: ['in', ['get', 'clase'], ['literal', ['in_transition', 'ready_no_plan']]],
     paint: { 'line-color': '#ffffff', 'line-width': 5 } }, primerRotulo);
@@ -511,14 +516,15 @@ async function iniciar() {
   mapa.addLayer({ id: 'actividad-transicion', type: 'line', source: 'actividad', layout: { visibility: 'none' },
     filter: ['==', ['get', 'clase'], 'in_transition'], paint: { 'line-color': colorActividad, 'line-width': 3 } }, primerRotulo);
   mapa.addLayer({ id: 'actividad-sin-plan', type: 'line', source: 'actividad', layout: { visibility: 'none' },
-    filter: ['==', ['get', 'clase'], 'ready_no_plan'], paint: { 'line-color': '#26834a', 'line-width': 3, 'line-dasharray': [2, 1] } }, primerRotulo);
+    filter: ['==', ['get', 'clase'], 'ready_no_plan'], paint: { 'line-color': colorActividadEnvejecido, 'line-width': 3, 'line-dasharray': [2, 1] } }, primerRotulo);
 
   // PAU: contorno amarillo discontinuo con halo blanco.
   const colorPau = getComputedStyle(document.documentElement).getPropertyValue('--pau').trim();
+  const colorPauContorno = getComputedStyle(document.documentElement).getPropertyValue('--pau-contorno').trim();
   mapa.addSource('pau', { type: 'geojson', data: pau });
-  mapa.addLayer({ id: 'pau-relleno', type: 'fill', source: 'pau', paint: { 'fill-color': colorPau, 'fill-opacity': 0.05 } }, primerRotulo);
+  mapa.addLayer({ id: 'pau-relleno', type: 'fill', source: 'pau', paint: { 'fill-color': colorPau, 'fill-opacity': 1 } }, primerRotulo);
   mapa.addLayer({ id: 'pau-halo', type: 'line', source: 'pau', paint: { 'line-color': '#ffffff', 'line-width': 4.5 } }, primerRotulo);
-  mapa.addLayer({ id: 'pau-linea', type: 'line', source: 'pau', paint: { 'line-color': colorPau, 'line-width': 2.5, 'line-dasharray': [2, 1] } }, primerRotulo);
+  mapa.addLayer({ id: 'pau-linea', type: 'line', source: 'pau', paint: { 'line-color': colorPauContorno, 'line-width': 2.5, 'line-dasharray': [2, 1] } }, primerRotulo);
 
   // Estaciones: tamaño según suelo vacante a 800 m; gradiente de salidas con tope verde en 50/h.
   const maxSueloVacanteEstaciones = maximoPropiedad(estaciones.features, 'suelo_vacante_800m_ha') || 1;
