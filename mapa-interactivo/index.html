@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Madrid por secciones</title>
+<title>Estaciones con potencial de crecimiento</title>
 <!-- MapLibre GL JS, versión fijada (no cambia sola). -->
 <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -54,7 +54,12 @@
   .capa { display: grid; grid-template-columns: 18px 30px 1fr; gap: 6px; align-items: center; font-size: 13px; margin: 4px 0; cursor: pointer; }
   .capa input { margin: 0; }
   .linea { height: 0; border-top: 3px solid; }
-  .punto { width: 10px; height: 10px; border-radius: 50%; background: var(--estacion); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--estacion); justify-self: center; }
+  .punto { width: 14px; height: 14px; border-radius: 50%; background: linear-gradient(90deg, #e76f2e 0%, #f4d03f 50%, #2e9d58 100%); border: 2px solid #fff; box-shadow: 0 0 0 1px #777; justify-self: center; }
+  #indice-config { margin: 12px 0; }
+  #indice-config .fila-peso { display: grid; grid-template-columns: 1fr 86px; gap: 8px; align-items: center; margin: 6px 0; font-size: 13px; }
+  #indice-config input { width: 100%; min-width: 0; padding: 5px 6px; border: 1px solid var(--borde); border-radius: 5px; font: inherit; font-variant-numeric: tabular-nums; }
+  #indice-config .total-pesos { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--borde); margin-top: 8px; padding-top: 7px; font-size: 13px; font-weight: 600; }
+  #indice-config .nota-pesos { margin: 6px 0 0; color: var(--texto-3); font-size: 11.5px; }
   .sublista { margin: 0 0 4px 24px; font-size: 12px; color: var(--texto-2); }
   .sublista div { display: grid; grid-template-columns: 30px 1fr; gap: 6px; align-items: center; }
   #aviso-fondo { display: none; margin-top: 10px; font-size: 12px; color: var(--texto-2); background: #f4f3ef; border-radius: 6px; padding: 6px 8px; }
@@ -84,13 +89,22 @@
 <body>
 <div id="mapa">
   <aside id="panel">
-    <h1>Madrid por secciones</h1>
-    <p class="sub">Variables por sección censal 2025 para leer dónde cabe más ciudad. Comunidad de Madrid; algunas, solo Madrid ciudad.</p>
+    <h1>Estaciones con potencial de crecimiento</h1>
+    <p class="sub">Potencial de crecimiento urbano orientado al transporte público en la Comunidad de Madrid.</p>
 
     <label class="campo" for="selector">Variable</label>
     <select id="selector"></select>
     <div id="descripcion"></div>
     <div id="leyenda"></div>
+
+    <fieldset id="indice-config">
+      <legend>Índice de idoneidad</legend>
+      <div class="fila-peso"><label for="peso-transporte">Transporte (%)</label><input id="peso-transporte" type="number" min="0" max="100" step="1" value="50"></div>
+      <div class="fila-peso"><label for="peso-empleo">Empleo (%)</label><input id="peso-empleo" type="number" min="0" max="100" step="1" value="35"></div>
+      <div class="fila-peso"><label for="peso-verde">Zonas verdes (%)</label><input id="peso-verde" type="number" min="0" max="100" step="1" value="15"></div>
+      <div class="total-pesos"><span>Total</span><output id="total-pesos">100 %</output></div>
+      <p class="nota-pesos">Si falta algún dato en una sección, el índice redistribuye proporcionalmente el peso entre las variables disponibles.</p>
+    </fieldset>
 
     <fieldset>
       <legend>Capas</legend>
@@ -101,7 +115,7 @@
         <div><span class="linea" style="border-color: var(--actividad); border-top-style: dashed"></span>Envejecido y junto a estación, sin planeamiento</div>
         <div><span class="linea" style="border-color: var(--actividad); border-top-width: 1px"></span>Resto (parciales, ninguna, desconocida)</div>
       </div>
-      <label class="capa"><input type="checkbox" id="ver-estaciones" checked><span class="punto"></span>Estaciones (Metro, Metro Ligero, tranvía, Cercanías)</label>
+      <label class="capa"><input type="checkbox" id="ver-estaciones" checked><span class="punto"></span>Estaciones (tamaño: suelo vacante a 800 m; color: salidas en hora punta)</label>
     </fieldset>
     <div id="aviso-fondo"></div>
   </aside>
@@ -205,6 +219,11 @@ const VARIABLES = [
     descripcion: 'Renta neta media anual por persona de los residentes (2024).',
     fuente: 'INE, Atlas de Distribución de Renta de los Hogares 2024 (CC BY 4.0)',
     aviso: '124 secciones comparten el valor máximo exacto (40.089 €): léelo como «40.089 € o más».' },
+  { id: 'indice_idoneidad', tema: 'Índice de idoneidad', etiqueta: 'Índice de idoneidad', unidad: 'puntos / 100', decimales: 1,
+    calculada: true,
+    descripcion: 'Índice dinámico de 0 a 100 que combina salidas por hora punta, empleos alcanzables en 45 minutos y proximidad a zonas verdes.',
+    fuente: 'Cálculo en el navegador a partir de salidas_hora_punta, empleos_45min y dist_verde_m. Pesos configurables en este panel.',
+    aviso: 'Cada componente se normaliza entre 0 y 100 para toda la Comunidad de Madrid. En zonas verdes, menor distancia obtiene mejor puntuación.' },
 ];
 
 // Si añades una capa tuya, hazlo aquí (se llama cuando el mapa ya está listo). Ejemplo en el LEEME.
@@ -241,19 +260,23 @@ function redondearCorte(x) {
 
 // Cortes por quintiles de los valores con dato.
 function quintiles(valores) {
-  const v = [...valores].sort((a, b) => a - b);
-  const cortes = [1, 2, 3, 4].map(k => redondearCorte(v[Math.floor(k * v.length / 5)]));
-  return [...new Set(cortes)].filter(c => c > v[0]);
+  const v = [...valores].filter(Number.isFinite).sort((a, b) => a - b);
+  if (!v.length) return [];
+  const cortes = [1, 2, 3, 4].map(k => redondearCorte(v[Math.min(v.length - 1, Math.floor(k * v.length / 5))]));
+  return [...new Set(cortes)].filter(c => c > v[0] && c < v[v.length - 1]);
 }
 
 // Clases de una variable: cortes, colores, etiquetas de la leyenda y recuento de secciones.
 function clasesDe(variable, features) {
-  const valores = features.map(f => f.properties[variable.id]).filter(x => x !== null && x !== undefined);
+  const valores = features.map(f => f.properties?.[variable.id])
+    .filter(x => x !== null && x !== undefined && x !== '')
+    .map(Number).filter(x => Number.isFinite(x));
   const cortes = variable.cortes ?? quintiles(valores);
   const n = cortes.length + 1;
   let colores = PALETA.slice(PALETA.length - n);           // si hay menos clases, se usan los tonos más oscuros
   if (variable.invertir) colores = [...colores].reverse();
-  const min = Math.min(...valores), max = Math.max(...valores);
+  const min = valores.length ? Math.min(...valores) : 0;
+  const max = valores.length ? Math.max(...valores) : 0;
   const d = variable.decimales;
   const etiquetas = [];
   const recuento = new Array(n).fill(0);
@@ -261,7 +284,9 @@ function clasesDe(variable, features) {
   for (let i = 0; i < n; i++) {
     const desde = i === 0 ? min : cortes[i - 1];
     const hasta = i === n - 1 ? max : cortes[i];
-    if (d === 0) {
+    if (!valores.length) {
+      etiquetas.push('Sin valores');
+    } else if (d === 0) {
       const alto = i === n - 1 ? hasta : hasta - 1;     // enteros: rangos cerrados (2–3, 4–7…)
       etiquetas.push(desde === alto ? formatear(desde, 0) : `${formatear(desde, 0)}–${formatear(alto, 0)}`);
     } else if (i === 0 && desde === 0 && cortes[0] <= 0.01) {
@@ -339,10 +364,73 @@ const CAMPOS_ACTIVIDAD = [
   ['Estación más cercana', 'estacion_cercana'], ['Distancia a la estación', 'estacion_cercana_m', 0, 'm'], ['Residentes a 500 m (aprox.)', 'residentes_500m', 0],
 ];
 const CAMPOS_ESTACION = [
-  ['Modos', 'modos'], ['Líneas', 'lineas'], ['Salidas por hora (7–9 h)', 'salidas_hora_punta', 1],
-  ['Suelo vacante a 500 m', 'suelo_vacante_500m_ha', 2, 'ha'], ['Suelo vacante a 800 m', 'suelo_vacante_800m_ha', 2, 'ha'],
-  ['… de él, residencial, mixto, actividad o urbanizable', 'suelo_vacante_800m_res_act_ha', 2, 'ha'], ['Parcelas vacantes a 800 m', 'parcelas_vacantes_800m', 0],
+  ['Salidas por hora (7–9 h)', 'salidas_hora_punta', 1],
+  ['Suelo vacante a 800 m', 'suelo_vacante_800m_ha', 2, 'ha'],
+  ['Suelo vacante residencial / actividad', 'suelo_vacante_800m_res_act_ha', 2, 'ha'],
+  ['Parcelas vacantes a 800 m', 'parcelas_vacantes_800m', 0],
+  ['Modos', 'modos'], ['Líneas', 'lineas'],
+  ['Suelo vacante a 500 m', 'suelo_vacante_500m_ha', 2, 'ha'],
 ];
+
+// ---------------------------------------------------------------- índice de idoneidad (cálculo local; no se modifica ningún fichero de datos)
+
+const CAMPOS_INDICE = {
+  transporte: 'salidas_hora_punta',
+  empleo: 'empleos_45min',
+  verde: 'dist_verde_m',
+};
+
+function numeroValido(valor) {
+  if (valor === null || valor === undefined || valor === '') return null;
+  const n = Number(valor);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizarComponente(valor, min, max, invertir = false) {
+  if (valor === null) return null;
+  // Si toda la Comunidad tiene el mismo valor, no existe gradiente: se asigna el punto neutro.
+  if (max === min) return 50;
+  const n = ((valor - min) / (max - min)) * 100;
+  return invertir ? 100 - n : n;
+}
+
+function calcularIndiceIdoneidad(features, pesos) {
+  const definiciones = [
+    { clave: CAMPOS_INDICE.transporte, peso: pesos.transporte, invertir: false },
+    { clave: CAMPOS_INDICE.empleo, peso: pesos.empleo, invertir: false },
+    { clave: CAMPOS_INDICE.verde, peso: pesos.verde, invertir: true },
+  ];
+  const rangos = {};
+  for (const def of definiciones) {
+    const valores = features.map(f => numeroValido(f.properties?.[def.clave])).filter(v => v !== null);
+    rangos[def.clave] = valores.length
+      ? { min: Math.min(...valores), max: Math.max(...valores) }
+      : null;
+  }
+
+  for (const feature of features) {
+    let sumaPonderada = 0;
+    let pesoDisponible = 0;
+    for (const def of definiciones) {
+      if (!(def.peso > 0) || !rangos[def.clave]) continue;
+      const valor = numeroValido(feature.properties?.[def.clave]);
+      if (valor === null) continue;
+      const rango = rangos[def.clave];
+      const normalizado = normalizarComponente(valor, rango.min, rango.max, def.invertir);
+      sumaPonderada += normalizado * def.peso;
+      pesoDisponible += def.peso;
+    }
+    // Propiedad efímera en memoria para MapLibre: nunca se escribe en CSV ni GeoJSON de origen.
+    feature.properties.indice_idoneidad = pesoDisponible > 0
+      ? Math.round((sumaPonderada / pesoDisponible) * 10) / 10
+      : null;
+  }
+}
+
+function maximoPropiedad(features, clave) {
+  const valores = features.map(f => numeroValido(f.properties?.[clave])).filter(v => v !== null);
+  return valores.length ? Math.max(0, ...valores) : 0;
+}
 
 // ---------------------------------------------------------------- arranque
 
@@ -422,11 +510,21 @@ async function iniciar() {
   mapa.addLayer({ id: 'pau-halo', type: 'line', source: 'pau', paint: { 'line-color': '#ffffff', 'line-width': 4.5 } }, primerRotulo);
   mapa.addLayer({ id: 'pau-linea', type: 'line', source: 'pau', paint: { 'line-color': colorPau, 'line-width': 2.5, 'line-dasharray': [2, 1] } }, primerRotulo);
 
-  // Estaciones: puntos negros con borde blanco, encima de todo.
+  // Estaciones: tamaño según suelo vacante a 800 m; color según salidas en hora punta.
+  // Los extremos del gradiente se calculan con los datos que llegan al navegador.
+  const maxSueloVacanteEstaciones = maximoPropiedad(estaciones.features, 'suelo_vacante_800m_ha') || 1;
+  const maxSalidasEstaciones = maximoPropiedad(estaciones.features, 'salidas_hora_punta') || 1;
   mapa.addSource('estaciones', { type: 'geojson', data: estaciones });
   mapa.addLayer({ id: 'estaciones', type: 'circle', source: 'estaciones',
-    paint: { 'circle-color': '#0b0b0b', 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2.5, 14, 6],
-             'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 } });
+    paint: {
+      'circle-radius': ['interpolate', ['linear'], ['to-number', ['get', 'suelo_vacante_800m_ha'], 0],
+        0, 3, maxSueloVacanteEstaciones, 19],
+      'circle-color': ['case', ['==', ['get', 'salidas_hora_punta'], null], COLOR_SIN_DATO,
+        ['interpolate', ['linear'], ['to-number', ['get', 'salidas_hora_punta'], 0],
+          0, '#e76f2e', maxSalidasEstaciones / 2, '#f4d03f', maxSalidasEstaciones, '#2e9d58']],
+      'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5,
+      'circle-opacity': 0.92,
+    } });
 
   anadirCapasPropias(mapa);
 
@@ -437,14 +535,48 @@ async function iniciar() {
     .map(v => `<option value="${v.id}">${v.etiqueta}</option>`).join('')}</optgroup>`).join('');
   selector.value = VARIABLE_INICIAL;
 
+  const inputPesoTransporte = document.getElementById('peso-transporte');
+  const inputPesoEmpleo = document.getElementById('peso-empleo');
+  const inputPesoVerde = document.getElementById('peso-verde');
+  const totalPesos = document.getElementById('total-pesos');
+
+  function leerPesosIndice() {
+    const peso = input => {
+      const valor = Number(input.value);
+      return Number.isFinite(valor) ? Math.max(0, Math.min(100, valor)) : 0;
+    };
+    return {
+      transporte: peso(inputPesoTransporte),
+      empleo: peso(inputPesoEmpleo),
+      verde: peso(inputPesoVerde),
+    };
+  }
+
   let variableActiva = null;
   function aplicarVariable(id) {
-    variableActiva = VARIABLES.find(v => v.id === id);
+    variableActiva = VARIABLES.find(v => v.id === id) ?? VARIABLES[0];
     const clases = clasesDe(variableActiva, secciones.features);
     mapa.setPaintProperty('secciones-relleno', 'fill-color', expresionColor(variableActiva, clases));
     pintarLeyenda(variableActiva, clases);
   }
+
+  function actualizarIndiceIdoneidad() {
+    const pesos = leerPesosIndice();
+    const total = pesos.transporte + pesos.empleo + pesos.verde;
+    totalPesos.textContent = `${formatear(total, 0)} %`;
+    totalPesos.style.color = total === 100 ? 'var(--texto)' : '#b45309';
+    calcularIndiceIdoneidad(secciones.features, pesos);
+    // Actualiza la fuente en memoria y vuelve a pintar sin recargar la página.
+    mapa.getSource('secciones').setData(secciones);
+    aplicarVariable(selector.value);
+  }
+
   selector.addEventListener('change', () => aplicarVariable(selector.value));
+  for (const input of [inputPesoTransporte, inputPesoEmpleo, inputPesoVerde]) {
+    input.addEventListener('input', actualizarIndiceIdoneidad);
+    input.addEventListener('change', actualizarIndiceIdoneidad);
+  }
+  actualizarIndiceIdoneidad();
   aplicarVariable(selector.value);
 
   // Casillas de capas.
