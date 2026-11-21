@@ -21,8 +21,8 @@
     --texto-3: #6f6e69;
     --borde: #e2e0da;
     --sin-dato: #d9d7d0;
-    --pau: #f4e8ad;
-    --pau-contorno: #c49a18;
+    --pau: #79c891;
+    --pau-contorno: #79c891;
     --actividad: #6250d6;
     --actividad-envejecido: #26834a;
     --estacion: #0b0b0b;
@@ -158,8 +158,9 @@ const FICHEROS = {
   estaciones: '../estaciones.geojson',
 };
 
-// Paleta secuencial de 5 pasos (azul, de claro a oscuro).
-const PALETA = ['#86b6ef', '#3987e5', '#256abf', '#184f95', '#0d366b'];
+// Paleta secuencial de 5 pasos basada en #333284, de claro a oscuro.
+// Incluye varios tonos más claros, el color de referencia y un tono más oscuro.
+const PALETA = ['#c3c2e0', '#9695c7', '#6968ad', '#333284', '#252460'];
 const COLOR_SIN_DATO = '#d9d7d0';
 
 // Variable que se ve al abrir.
@@ -276,8 +277,8 @@ function quintiles(valores) {
   return [...new Set(cortes)].filter(c => c > v[0] && c < v[v.length - 1]);
 }
 
-// Clases de una variable. El índice tiene cinco tramos fijos: 0-20 blanco
-// y cuatro tonos de la paleta azul original, progresivamente más oscuros entre 20 y 100.
+// Clases de una variable. El índice tiene cinco tramos fijos con una escala
+// de azules-violetas basada en #333284, progresivamente más oscuros.
 function clasesDe(variable, features) {
   const valores = features.map(f => f.properties?.[variable.id])
     .filter(x => x !== null && x !== undefined && x !== '')
@@ -285,7 +286,7 @@ function clasesDe(variable, features) {
 
   if (variable.id === 'indice_idoneidad') {
     const cortes = [20, 40, 60, 80];
-    const colores = ['#c3dbf7', ...PALETA.slice(1)];
+    const colores = [...PALETA];
     const etiquetas = ['0–20', '20–40', '40–60', '60–80', '80–100'];
     const recuento = new Array(5).fill(0);
     for (const x of valores) recuento[cortes.filter(c => x >= c).length]++;
@@ -526,7 +527,7 @@ async function iniciar() {
   mapa.addLayer({ id: 'actividad-sin-plan', type: 'line', source: 'actividad', layout: { visibility: 'none' },
     filter: ['==', ['get', 'clase'], 'ready_no_plan'], paint: { 'line-color': colorActividadEnvejecido, 'line-width': 3, 'line-dasharray': [2, 1] } }, primerRotulo);
 
-  // PAU: contorno amarillo discontinuo con halo blanco.
+  // PAU: relleno verde #79c891 y contorno discontinuo a juego con halo blanco.
   const colorPau = getComputedStyle(document.documentElement).getPropertyValue('--pau').trim();
   const colorPauContorno = getComputedStyle(document.documentElement).getPropertyValue('--pau-contorno').trim();
   mapa.addSource('pau', { type: 'geojson', data: pau });
@@ -537,7 +538,7 @@ async function iniciar() {
   mapa.addLayer({ id: 'pau-etiquetas', type: 'symbol', source: 'pau',
     layout: {
       'symbol-placement': 'point',
-      'text-field': ['coalesce', ['get', 'name'], ['get', 'group_label'], ['get', 'code']],
+      'text-field': ['upcase', ['coalesce', ['get', 'name'], ['get', 'group_label'], ['get', 'code']]],
       'text-font': ['Noto Sans Regular'],
       'text-size': ['interpolate', ['linear'], ['zoom'], 9, 9, 12, 11, 15, 13],
       'text-max-width': 12,
@@ -546,7 +547,7 @@ async function iniciar() {
       'text-padding': 3,
     },
     paint: {
-      'text-color': '#594714',
+      'text-color': '#245b38',
       'text-halo-color': '#fffdf4',
       'text-halo-width': 1.6,
       'text-halo-blur': 0.3,
