@@ -64,7 +64,7 @@
   .capa { display: grid; grid-template-columns: 18px 30px 1fr; gap: 6px; align-items: center; font-size: 13px; margin: 4px 0; cursor: pointer; }
   .capa input { margin: 0; }
   .linea { height: 0; border-top: 3px solid; }
-  .punto { width: 14px; height: 14px; border-radius: 50%; background: linear-gradient(90deg, #e76f2e 0%, #f4d03f 50%, #18864b 100%); border: 2px solid #fff; box-shadow: 0 0 0 1px #777; justify-self: center; }
+  .punto { width: 14px; height: 14px; border-radius: 50%; background: linear-gradient(90deg, #ffed00 0%, #18864b 100%); border: 2px solid #fff; box-shadow: 0 0 0 1px #777; justify-self: center; }
   #indice-config { margin: 12px 0; }
   #indice-config .fila-peso { display: grid; grid-template-columns: 1fr 86px; gap: 8px; align-items: center; margin: 6px 0; font-size: 13px; }
   #indice-config input { width: 100%; min-width: 0; padding: 5px 6px; border: 1px solid var(--borde); border-radius: 5px; font: inherit; font-variant-numeric: tabular-nums; }
@@ -158,9 +158,8 @@ const FICHEROS = {
   estaciones: '../estaciones.geojson',
 };
 
-// Paleta secuencial de 5 pasos basada en #333284, de claro a oscuro.
-// Incluye varios tonos más claros, el color de referencia y un tono más oscuro.
-const PALETA = ['#c3c2e0', '#9695c7', '#6968ad', '#333284', '#252460'];
+// Paleta secuencial azul original de 5 pasos, de claro a oscuro.
+const PALETA = ['#86b6ef', '#3987e5', '#256abf', '#184f95', '#0d366b'];
 const COLOR_SIN_DATO = '#d9d7d0';
 
 // Variable que se ve al abrir.
@@ -287,10 +286,12 @@ function clasesDe(variable, features) {
   if (variable.id === 'indice_idoneidad') {
     const cortes = [20, 40, 60, 80];
     const colores = [...PALETA];
-    const etiquetas = ['0–20', '20–40', '40–60', '60–80', '80–100'];
+    // Intervalos semiabiertos: cada límite pertenece inequívocamente al tramo que empieza en él.
+    // En MapLibre, step asigna el valor exacto del corte a la clase siguiente.
+    const etiquetas = ['0–<20', '20–<40', '40–<60', '60–<80', '80–100'];
     const recuento = new Array(5).fill(0);
     for (const x of valores) recuento[cortes.filter(c => x >= c).length]++;
-    return { cortes, colores, etiquetas, recuento, sinDato: features.length - valores.length, blancoPrimera: true };
+    return { cortes, colores, etiquetas, recuento, sinDato: features.length - valores.length };
   }
 
   const cortes = variable.cortes ?? quintiles(valores);
@@ -320,7 +321,7 @@ function clasesDe(variable, features) {
   return { cortes, colores, etiquetas, recuento, sinDato: features.length - valores.length };
 }
 
-// Expresión MapLibre: gris sin dato, blanco para índice 0-20 y clases azules sucesivas.
+// Expresión MapLibre: gris sin dato y la paleta azul en los cinco tramos del índice.
 function expresionColor(variable, clases) {
   const colorBase = clases.colores[0] ?? COLOR_SIN_DATO;
   const paso = ['step', ['to-number', ['get', variable.id]], colorBase];
@@ -329,12 +330,8 @@ function expresionColor(variable, clases) {
 }
 
 function pintarLeyenda(variable, clases) {
-  const filas = clases.etiquetas.map((t, i) => {
-    const muestraStyle = clases.blancoPrimera && i === 0
-      ? 'background:#ffffff;border:1px solid #9b9b9b;'
-      : `background:${clases.colores[i]}`;
-    return `<div class="clase"><span class="muestra" style="${muestraStyle}"></span><span>${t}</span><span class="n">${formatear(clases.recuento[i], 0)}</span></div>`;
-  });
+  const filas = clases.etiquetas.map((t, i) =>
+    `<div class="clase"><span class="muestra" style="background:${clases.colores[i]}"></span><span>${t}</span><span class="n">${formatear(clases.recuento[i], 0)}</span></div>`);
   if (clases.sinDato > 0) {
     const texto = variable.soloMadrid ? 'Sin dato o fuera de Madrid ciudad' : 'Sin dato';
     filas.push(`<div class="clase"><span class="muestra" style="background:${COLOR_SIN_DATO}"></span><span>${texto}</span><span class="n">${formatear(clases.sinDato, 0)}</span></div>`);
@@ -553,18 +550,25 @@ async function iniciar() {
       'text-halo-blur': 0.3,
     } });
 
-  // Estaciones: tamaño según suelo vacante a 800 m; gradiente de salidas con tope verde en 50/h.
+  // Estaciones: menos de 5 ha se representa con un punto negro discreto y uniforme;
+  // desde 5 ha se mantienen las burbujas graduadas por suelo y coloreadas por salidas.
   const maxSueloVacanteEstaciones = maximoPropiedad(estaciones.features, 'suelo_vacante_800m_ha') || 1;
+  const sueloVacanteEstacion = ['to-number', ['get', 'suelo_vacante_800m_ha'], 0];
+  const menosDeCincoHa = ['all', ['!=', ['get', 'suelo_vacante_800m_ha'], null], ['<', sueloVacanteEstacion, 5]];
   mapa.addSource('estaciones', { type: 'geojson', data: estaciones });
   mapa.addLayer({ id: 'estaciones', type: 'circle', source: 'estaciones',
     paint: {
-      'circle-radius': ['interpolate', ['linear'], ['to-number', ['get', 'suelo_vacante_800m_ha'], 0],
-        0, 3, maxSueloVacanteEstaciones, 19],
-      'circle-color': ['case', ['==', ['get', 'salidas_hora_punta'], null], COLOR_SIN_DATO,
+      'circle-radius': ['case', menosDeCincoHa, 2.1,
+        ['interpolate', ['linear'], sueloVacanteEstacion,
+          0, 3, maxSueloVacanteEstaciones, 19]],
+      'circle-color': ['case', ['==', ['get', 'suelo_vacante_800m_ha'], null], COLOR_SIN_DATO,
+        menosDeCincoHa, '#111111',
+        ['==', ['get', 'salidas_hora_punta'], null], COLOR_SIN_DATO,
         ['interpolate', ['linear'], ['to-number', ['get', 'salidas_hora_punta'], 0],
-          0, '#e76f2e', 25, '#f4d03f', 50, '#18864b']],
-      'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5,
-      'circle-opacity': 0.92,
+          0, '#ffed00', 50, '#18864b']],
+      'circle-stroke-color': '#ffffff',
+      'circle-stroke-width': ['case', menosDeCincoHa, 0.6, 1.5],
+      'circle-opacity': ['case', menosDeCincoHa, 0.78, 0.92],
     } });
   // Etiquetas solo para estaciones con más de 40 ha de suelo vacante en su radio de 800 m.
   mapa.addLayer({ id: 'estaciones-etiquetas', type: 'symbol', source: 'estaciones',
