@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Madrid por secciones</title>
+<!-- MapLibre GL JS, versión fijada (no cambia sola). -->
+<link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<style>
+  /* Colores en un solo sitio: cámbialos aquí. */
+  :root {
+    color-scheme: light;
+    --fondo: #fcfcfb;
+    --panel: #ffffff;
+    --texto: #0b0b0b;
+    --texto-2: #52514e;
+    --texto-3: #6f6e69;
+    --borde: #e2e0da;
+    --sin-dato: #d9d7d0;
+    --pau: #eb6834;
+    --actividad: #6250d6;
+    --estacion: #0b0b0b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--fondo); color: var(--texto);
+    font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: grid; grid-template-rows: 1fr auto;
+  }
+  #mapa { position: relative; min-height: 0; }
+  #panel {
+    position: absolute; top: 12px; left: 12px; z-index: 2;
+    width: 340px; max-height: calc(100% - 24px); overflow: auto;
+    background: var(--panel); border: 1px solid var(--borde); border-radius: 8px;
+    padding: 14px 16px; box-shadow: 0 1px 4px rgba(0,0,0,.08);
+  }
+  h1 { font-size: 17px; margin: 0 0 2px; }
+  .sub { color: var(--texto-2); margin: 0 0 12px; font-size: 13px; }
+  label.campo { display: block; font-weight: 600; margin-bottom: 4px; font-size: 13px; }
+  select { width: 100%; font: inherit; padding: 6px 8px; border: 1px solid var(--borde); border-radius: 6px; background: #fff; color: var(--texto); }
+  #descripcion { margin: 10px 0 8px; font-size: 13px; color: var(--texto-2); }
+  #descripcion p { margin: 0 0 6px; }
+  #descripcion .aviso { color: var(--texto-3); font-size: 12px; }
+  #leyenda { margin: 4px 0 12px; }
+  #leyenda .titulo { font-size: 12px; color: var(--texto-2); margin-bottom: 4px; }
+  .clase { display: grid; grid-template-columns: 22px 1fr auto; gap: 8px; align-items: center; font-size: 13px; padding: 1px 0; }
+  .clase .muestra { width: 22px; height: 14px; border-radius: 3px; }
+  .clase .n { color: var(--texto-3); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .clase span { font-variant-numeric: tabular-nums; }
+  fieldset { border: 0; border-top: 1px solid var(--borde); margin: 0; padding: 10px 0 0; }
+  legend { font-weight: 600; font-size: 13px; padding: 0; margin-bottom: 4px; }
+  .capa { display: grid; grid-template-columns: 18px 30px 1fr; gap: 6px; align-items: center; font-size: 13px; margin: 4px 0; cursor: pointer; }
+  .capa input { margin: 0; }
+  .linea { height: 0; border-top: 3px solid; }
+  .punto { width: 10px; height: 10px; border-radius: 50%; background: var(--estacion); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--estacion); justify-self: center; }
+  .sublista { margin: 0 0 4px 24px; font-size: 12px; color: var(--texto-2); }
+  .sublista div { display: grid; grid-template-columns: 30px 1fr; gap: 6px; align-items: center; }
+  #aviso-fondo { display: none; margin-top: 10px; font-size: 12px; color: var(--texto-2); background: #f4f3ef; border-radius: 6px; padding: 6px 8px; }
+  footer {
+    font-size: 11.5px; color: var(--texto-2); background: var(--panel);
+    border-top: 1px solid var(--borde); padding: 6px 12px;
+  }
+  footer strong { color: var(--texto); }
+  /* Ventanas emergentes */
+  .maplibregl-popup-content { font: 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--texto); padding: 10px 12px; max-width: 340px; }
+  .pop h2 { font-size: 14px; margin: 0 0 2px; }
+  .pop .lugar { color: var(--texto-2); font-size: 12px; margin-bottom: 6px; }
+  .pop .destacado { background: #f4f3ef; border-radius: 6px; padding: 6px 8px; margin-bottom: 6px; }
+  .pop .destacado .v { font-size: 16px; font-weight: 600; }
+  .pop table { border-collapse: collapse; width: 100%; }
+  .pop td { padding: 1px 0; vertical-align: top; }
+  .pop td.v { text-align: right; padding-left: 10px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pop .gris { color: var(--texto-3); }
+  .pop .fuente { color: var(--texto-3); font-size: 11.5px; margin-top: 6px; }
+  /* Móvil: el panel arriba, más bajo */
+  @media (max-width: 600px) {
+    #panel { left: 8px; right: 8px; top: 8px; width: auto; max-height: 45%; padding: 10px 12px; }
+    footer { font-size: 10.5px; }
+  }
+</style>
+</head>
+<body>
+<div id="mapa">
+  <aside id="panel">
+    <h1>Madrid por secciones</h1>
+    <p class="sub">Variables por sección censal 2025 para leer dónde cabe más ciudad. Comunidad de Madrid; algunas, solo Madrid ciudad.</p>
+
+    <label class="campo" for="selector">Variable</label>
+    <select id="selector"></select>
+    <div id="descripcion"></div>
+    <div id="leyenda"></div>
+
+    <fieldset>
+      <legend>Capas</legend>
+      <label class="capa"><input type="checkbox" id="ver-pau" checked><span class="linea" style="border-color: var(--pau); border-top-style: dashed"></span>PAU (en curso y acabados) y urbanizable programado</label>
+      <label class="capa"><input type="checkbox" id="ver-actividad"><span class="linea" style="border-color: var(--actividad)"></span>Suelo de actividad en transición</label>
+      <div class="sublista">
+        <div><span class="linea" style="border-color: var(--actividad)"></span>En transición (planeamiento en marcha)</div>
+        <div><span class="linea" style="border-color: var(--actividad); border-top-style: dashed"></span>Envejecido y junto a estación, sin planeamiento</div>
+        <div><span class="linea" style="border-color: var(--actividad); border-top-width: 1px"></span>Resto (parciales, ninguna, desconocida)</div>
+      </div>
+      <label class="capa"><input type="checkbox" id="ver-estaciones" checked><span class="punto"></span>Estaciones (Metro, Metro Ligero, tranvía, Cercanías)</label>
+    </fieldset>
+    <div id="aviso-fondo"></div>
+  </aside>
+</div>
+<footer>
+  <strong>Datos: Xamfrà (Damos en el Blanco) a partir de fuentes abiertas.</strong>
+  INE (Censo anual 2025, seccionado 2025, Atlas de Renta 2024) CC BY 4.0 ·
+  Comunidad de Madrid (Suelo Vacante y Ocupado 2026, planeamiento refundido 2025, afiliación 2025) CC BY 4.0 ·
+  Ayuntamiento de Madrid (Censo de locales dic. 2024, PGOUM 1997, VEDA jul. 2026) CC BY 4.0 ·
+  Elaboración propia a partir de datos INSPIRE de la Dirección General del Catastro ·
+  Powered by CRTM · EMT Madrid · Renfe Data CC BY 4.0 ·
+  © colaboradores de OpenStreetMap (ODbL) ·
+  Mapa base: OpenFreeMap © OpenMapTiles, data © OpenStreetMap contributors.
+  Valores de toda la sección, nunca de un edificio; vacío = sin dato, no cero.
+</footer>
+
+<script>
+// =====================================================================
+//  CONFIGURACIÓN — lo que más vas a tocar
+// =====================================================================
+
+// Mapa base gratuito (OpenFreeMap, estilo «positron»).
+const ESTILO_BASE_URL = 'https://tiles.openfreemap.org/styles/positron';
+
+// Ficheros del kit (rutas relativas a esta página).
+const FICHEROS = {
+  secciones: '../secciones.geojson',
+  pau: '../pau-madrid.geojson',
+  actividad: '../suelo-actividad-transicion.geojson',
+  estaciones: '../estaciones.geojson',
+};
+
+// Paleta secuencial de 5 pasos (azul, de claro a oscuro).
+const PALETA = ['#86b6ef', '#3987e5', '#256abf', '#184f95', '#0d366b'];
+const COLOR_SIN_DATO = '#d9d7d0';
+
+// Variable que se ve al abrir.
+const VARIABLE_INICIAL = 'densidad_hab_km2';
+
+// Una entrada por variable de secciones.geojson.
+//   id          nombre de la columna (igual que en el CSV)
+//   cortes      opcional: límites de clase a mano (4 números → 5 clases). Sin cortes, se calculan por quintiles.
+//   invertir    true = el color oscuro es el valor bajo (útil en distancias: oscuro = cerca)
+//   soloMadrid  true = la variable solo existe en Madrid ciudad (fuera se ve gris)
+const VARIABLES = [
+  { id: 'poblacion', tema: 'Población y densidad', etiqueta: 'Población', unidad: 'hab.', decimales: 0,
+    descripcion: 'Residentes en la sección el 1-1-2025.',
+    fuente: 'INE, Censo anual de población 2025 (CC BY 4.0)',
+    aviso: 'Total oficial de la sección; no se reparte por edificios.' },
+  { id: 'densidad_hab_km2', tema: 'Población y densidad', etiqueta: 'Densidad de población', unidad: 'hab./km²', decimales: 0,
+    descripcion: 'Residentes por km² de toda la superficie de la sección.',
+    fuente: 'INE, Censo anual 2025 y seccionado 2025 (CC BY 4.0)',
+    aviso: 'Bruta: cuenta parques, viario, montes y embalses.' },
+  { id: 'viviendas_ha', tema: 'Población y densidad', etiqueta: 'Viviendas por hectárea', unidad: 'viv./ha', decimales: 1,
+    cortes: [25, 50, 100, 200],
+    descripcion: 'Viviendas del Catastro por hectárea de sección (densidad bruta).',
+    fuente: 'Elaboración propia a partir de datos INSPIRE de la Dirección General del Catastro (ago. 2026); INE',
+    aviso: 'No es edificabilidad. Incluye viviendas vacías y secundarias. Catastro: uso comercial pendiente de revisión.' },
+
+  { id: 'suelo_vacante_ha', tema: 'Suelo y edificación', etiqueta: 'Suelo vacante', unidad: 'ha', decimales: 2,
+    cortes: [0.01, 0.5, 2, 5],
+    descripcion: 'Superficie de parcelas vacantes (≥ 100 m², sin verde público ni franjas estrechas) en la sección.',
+    fuente: 'Comunidad de Madrid, Suelo Vacante y Ocupado 2026, IDEM (CC BY 4.0); clasificación Xamfrà',
+    aviso: 'Vacante no es edificable ni disponible: puede ser un parque o un equipamiento previsto.' },
+  { id: 'suelo_vacante_pct', tema: 'Suelo y edificación', etiqueta: 'Suelo vacante (% de la sección)', unidad: '%', decimales: 1,
+    cortes: [0.01, 1.5, 6, 12],
+    descripcion: 'Parte de la superficie de la sección ocupada por esas parcelas vacantes.',
+    fuente: 'Comunidad de Madrid, Suelo Vacante y Ocupado 2026, IDEM (CC BY 4.0)',
+    aviso: 'Vacante no es edificable ni disponible.' },
+  { id: 'edif_2_plantas', tema: 'Suelo y edificación', etiqueta: 'Edificios con ≥ 2 plantas que caben', unidad: 'edif.', decimales: 0,
+    cortes: [1, 2, 4, 8], soloMadrid: true,
+    descripcion: 'Edificios residenciales en los que la norma zonal del PGOUM 97 admite al menos 2 plantas más de las que tienen.',
+    fuente: 'Xamfrà, método propio sobre Normas Urbanísticas PGOUM 97 (Ayuntamiento de Madrid) y Catastro INSPIRE',
+    aviso: 'Lectura teórica, nunca un certificado. Fuera de normas zonales (APE, APR, casco histórico) = desconocido.' },
+
+  { id: 'dist_estacion_m', tema: 'Transporte y empleo', etiqueta: 'Distancia a la estación', unidad: 'm', decimales: 0,
+    cortes: [250, 500, 800, 1500], invertir: true,
+    descripcion: 'Línea recta hasta la estación de Metro, Metro Ligero, tranvía o Cercanías más cercana. Oscuro = cerca.',
+    fuente: 'CRTM (Powered by CRTM) y Renfe Data (CC BY 4.0); cálculo Xamfrà',
+    aviso: 'No es distancia a pie. Faltan las estaciones de Metro abiertas después de mayo de 2025.' },
+  { id: 'salidas_hora_punta', tema: 'Transporte y empleo', etiqueta: 'Salidas por hora en punta', unidad: 'salidas/h', decimales: 1,
+    descripcion: 'Salidas programadas por hora de 7 a 9 h: autobús a ≤ 300 m y ferrocarril a ≤ 500 m.',
+    fuente: 'Powered by CRTM · EMT Madrid · Renfe Data (CC BY 4.0); cálculo Xamfrà',
+    aviso: 'Horario, no servicio observado. La línea 3 de Metro no tiene horarios en el GTFS público: infravalorado junto a ella.' },
+  { id: 'empleos_45min', tema: 'Transporte y empleo', etiqueta: 'Empleos a 45 min en transporte público', unidad: 'empleos', decimales: 0,
+    descripcion: 'Empleos alcanzables en 45 minutos saliendo entre las 7 y las 9 h (mediana). MODELO.',
+    fuente: 'Xamfrà (modelo) con afiliación por municipio (Comunidad de Madrid, 2025), Catastro, OSM y horarios CRTM/EMT/Renfe',
+    aviso: 'Empleo por sección estimado: solo los totales municipales son oficiales.' },
+
+  { id: 'locales_activos_1000hab', tema: 'Comercio, verde y renta', etiqueta: 'Locales activos por 1.000 hab.', unidad: 'locales/1.000 hab.', decimales: 1,
+    soloMadrid: true,
+    descripcion: 'Locales de planta baja abiertos con actividad, por cada 1.000 residentes.',
+    fuente: 'Ayuntamiento de Madrid, Censo de locales dic. 2024 (CC BY 4.0); INE 2025',
+    aviso: 'Solo locales a pie de calle; en el centro también sirven a visitantes y trabajadores.' },
+  { id: 'dist_verde_m', tema: 'Comercio, verde y renta', etiqueta: 'Distancia a zona verde (≥ 0,5 ha)', unidad: 'm', decimales: 0,
+    cortes: [100, 300, 600, 1000], invertir: true,
+    descripcion: 'Línea recta hasta el borde del parque o jardín público más cercano de al menos 0,5 ha. Oscuro = cerca.',
+    fuente: '© colaboradores de OpenStreetMap (ODbL); cálculo Xamfrà',
+    aviso: 'Según el mapeo de OSM; sin calidad, horario ni entradas.' },
+  { id: 'renta_persona_eur', tema: 'Comercio, verde y renta', etiqueta: 'Renta neta media por persona', unidad: '€/año', decimales: 0,
+    descripcion: 'Renta neta media anual por persona de los residentes (2024).',
+    fuente: 'INE, Atlas de Distribución de Renta de los Hogares 2024 (CC BY 4.0)',
+    aviso: '124 secciones comparten el valor máximo exacto (40.089 €): léelo como «40.089 € o más».' },
+];
+
+// Si añades una capa tuya, hazlo aquí (se llama cuando el mapa ya está listo). Ejemplo en el LEEME.
+function anadirCapasPropias(mapa) {
+  // mapa.addSource('mi-capa', { type: 'geojson', data: '../mi-capa.geojson' });
+  // mapa.addLayer({ id: 'mi-capa', type: 'line', source: 'mi-capa', paint: { 'line-color': '#e34948', 'line-width': 2 } });
+}
+
+// =====================================================================
+//  A partir de aquí, el funcionamiento del mapa
+// =====================================================================
+
+// Estilo vacío por si el mapa base no carga (sin conexión): los datos se ven igual.
+const ESTILO_VACIO = {
+  version: 8, sources: {},
+  layers: [{ id: 'fondo', type: 'background', paint: { 'background-color': '#f2f1ed' } }],
+};
+
+const formatos = {};
+function formatear(valor, decimales) {
+  if (valor === null || valor === undefined || valor === '') return null;
+  const clave = String(decimales);
+  // useGrouping 'always': también 1.156 (por defecto, en español, los números de 4 cifras van sin punto)
+  formatos[clave] ??= new Intl.NumberFormat('es-ES', { minimumFractionDigits: decimales, maximumFractionDigits: decimales, useGrouping: 'always' });
+  return formatos[clave].format(valor);
+}
+
+// Redondea un corte a 2 cifras significativas (la leyenda y el color usan el mismo número).
+function redondearCorte(x) {
+  if (x === 0) return 0;
+  const p = Math.pow(10, Math.floor(Math.log10(Math.abs(x))) - 1);
+  return Math.round(x / p) * p;
+}
+
+// Cortes por quintiles de los valores con dato.
+function quintiles(valores) {
+  const v = [...valores].sort((a, b) => a - b);
+  const cortes = [1, 2, 3, 4].map(k => redondearCorte(v[Math.floor(k * v.length / 5)]));
+  return [...new Set(cortes)].filter(c => c > v[0]);
+}
+
+// Clases de una variable: cortes, colores, etiquetas de la leyenda y recuento de secciones.
+function clasesDe(variable, features) {
+  const valores = features.map(f => f.properties[variable.id]).filter(x => x !== null && x !== undefined);
+  const cortes = variable.cortes ?? quintiles(valores);
+  const n = cortes.length + 1;
+  let colores = PALETA.slice(PALETA.length - n);           // si hay menos clases, se usan los tonos más oscuros
+  if (variable.invertir) colores = [...colores].reverse();
+  const min = Math.min(...valores), max = Math.max(...valores);
+  const d = variable.decimales;
+  const etiquetas = [];
+  const recuento = new Array(n).fill(0);
+  for (const x of valores) recuento[cortes.filter(c => x >= c).length]++;
+  for (let i = 0; i < n; i++) {
+    const desde = i === 0 ? min : cortes[i - 1];
+    const hasta = i === n - 1 ? max : cortes[i];
+    if (d === 0) {
+      const alto = i === n - 1 ? hasta : hasta - 1;     // enteros: rangos cerrados (2–3, 4–7…)
+      etiquetas.push(desde === alto ? formatear(desde, 0) : `${formatear(desde, 0)}–${formatear(alto, 0)}`);
+    } else if (i === 0 && desde === 0 && cortes[0] <= 0.01) {
+      etiquetas.push('0');
+    } else {
+      etiquetas.push(`${formatear(desde, d)} – ${formatear(hasta, d)}`);
+    }
+  }
+  const sinDato = features.length - valores.length;
+  return { cortes, colores, etiquetas, recuento, sinDato };
+}
+
+// Expresión de color de MapLibre: gris si no hay dato; si lo hay, el color de su clase.
+function expresionColor(variable, clases) {
+  const paso = ['step', ['to-number', ['get', variable.id]], clases.colores[0]];
+  clases.cortes.forEach((c, i) => paso.push(c, clases.colores[i + 1]));
+  return ['case', ['==', ['get', variable.id], null], COLOR_SIN_DATO, paso];
+}
+
+function pintarLeyenda(variable, clases) {
+  const filas = clases.etiquetas.map((t, i) =>
+    `<div class="clase"><span class="muestra" style="background:${clases.colores[i]}"></span><span>${t}</span><span class="n">${formatear(clases.recuento[i], 0)}</span></div>`);
+  if (clases.sinDato > 0) {
+    const texto = variable.soloMadrid ? 'Sin dato o fuera de Madrid ciudad' : 'Sin dato';
+    filas.push(`<div class="clase"><span class="muestra" style="background:${COLOR_SIN_DATO}"></span><span>${texto}</span><span class="n">${formatear(clases.sinDato, 0)}</span></div>`);
+  }
+  document.getElementById('leyenda').innerHTML =
+    `<div class="titulo">${variable.unidad} · secciones por clase</div>${filas.join('')}`;
+  document.getElementById('descripcion').innerHTML =
+    `<p>${variable.descripcion}</p><p class="aviso">${variable.aviso}</p><p class="aviso">Fuente: ${variable.fuente}</p>`;
+}
+
+// ---------------------------------------------------------------- ventanas emergentes
+
+function textoValor(variable, props) {
+  const v = formatear(props[variable.id], variable.decimales);
+  if (v !== null) return `${v} ${variable.unidad}`;
+  if (variable.soloMadrid && props.codigo_municipio !== '28079') return '<span class="gris">fuera de cobertura</span>';
+  return '<span class="gris">sin dato</span>';
+}
+
+function popupSeccion(props, variableActiva) {
+  const lugar = [props.municipio, props.nombre_distrito, props.barrio].filter(Boolean).join(' · ');
+  const filas = VARIABLES.filter(v => v.id !== variableActiva.id)
+    .map(v => `<tr><td>${v.etiqueta}</td><td class="v">${textoValor(v, props)}</td></tr>`).join('');
+  return `<div class="pop">
+    <h2>Sección ${props.codigo_seccion}</h2>
+    <div class="lugar">${lugar} · ${formatear(props.poblacion, 0)} hab. · ${formatear(props.superficie_ha, 1)} ha</div>
+    <div class="destacado"><div>${variableActiva.etiqueta}</div><div class="v">${textoValor(variableActiva, props)}</div>
+      <div class="fuente">Fuente: ${variableActiva.fuente}</div></div>
+    <table>${filas}</table>
+    <div class="fuente">Valores de toda la sección, nunca de un edificio. Datos: Xamfrà a partir de fuentes abiertas.</div>
+  </div>`;
+}
+
+// Tabla genérica para las capas: [etiqueta, propiedad, decimales, unidad]
+function popupCapa(titulo, lugar, props, campos, fuente) {
+  const filas = campos.filter(([, k]) => k in props).map(([etq, k, d, u]) => {
+    const raw = props[k];
+    let v = typeof raw === 'number' ? formatear(raw, d ?? 0) : raw;
+    v = (v === null || v === undefined || v === '') ? '<span class="gris">sin dato</span>' : `${v}${u ? ' ' + u : ''}`;
+    return `<tr><td>${etq}</td><td class="v">${v}</td></tr>`;
+  }).join('');
+  return `<div class="pop"><h2>${titulo}</h2><div class="lugar">${lugar}</div><table>${filas}</table><div class="fuente">${fuente}</div></div>`;
+}
+
+const CAMPOS_PAU = [
+  ['Código', 'code'], ['Grupo', 'group_label'], ['Superficie', 'area_ha', 1, 'ha'], ['Situación (VEDA)', 'status'],
+  ['Viviendas previstas (refundido 2025)', 'homes_planned_refundido', 0], ['Viviendas restantes (VEDA jul. 2026)', 'veda_homes_2026_07', 0],
+  ['Suelo vacante dentro', 'vacant_ha', 1, 'ha'], ['Estación más cercana', 'nearest_station'], ['Distancia a la estación', 'nearest_station_m', 0, 'm'],
+];
+const CAMPOS_ACTIVIDAD = [
+  ['Tipo', 'tipo'], ['Superficie', 'superficie_ha', 1, 'ha'], ['Clase', 'clase_texto'], ['Tejido envejecido', 'envejecido'],
+  ['Estación servida a ≤ 600 m', 'estacion_servida_600m'], ['Planeamiento que la transforma', 'planeamiento_que_transforma'],
+  ['Estación más cercana', 'estacion_cercana'], ['Distancia a la estación', 'estacion_cercana_m', 0, 'm'], ['Residentes a 500 m (aprox.)', 'residentes_500m', 0],
+];
+const CAMPOS_ESTACION = [
+  ['Modos', 'modos'], ['Líneas', 'lineas'], ['Salidas por hora (7–9 h)', 'salidas_hora_punta', 1],
+  ['Suelo vacante a 500 m', 'suelo_vacante_500m_ha', 2, 'ha'], ['Suelo vacante a 800 m', 'suelo_vacante_800m_ha', 2, 'ha'],
+  ['… de él, residencial, mixto, actividad o urbanizable', 'suelo_vacante_800m_res_act_ha', 2, 'ha'], ['Parcelas vacantes a 800 m', 'parcelas_vacantes_800m', 0],
+];
+
+// ---------------------------------------------------------------- arranque
+
+async function cargarEstiloBase() {
+  try {
+    const r = await fetch(ESTILO_BASE_URL, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    return await r.json();
+  } catch (e) {
+    const aviso = document.getElementById('aviso-fondo');
+    aviso.textContent = 'No se ha podido cargar el mapa base (¿sin conexión?). Se muestran solo los datos.';
+    aviso.style.display = 'block';
+    return ESTILO_VACIO;
+  }
+}
+
+async function cargarJSON(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(`No se ha podido leer ${url} (HTTP ${r.status}). ¿Has abierto la página con un servidor desde la carpeta kit?`);
+  return r.json();
+}
+
+async function iniciar() {
+  const [estilo, secciones, pau, actividad, estaciones] = await Promise.all([
+    cargarEstiloBase(), cargarJSON(FICHEROS.secciones), cargarJSON(FICHEROS.pau),
+    cargarJSON(FICHEROS.actividad), cargarJSON(FICHEROS.estaciones),
+  ]);
+
+  const mapa = new maplibregl.Map({
+    container: 'mapa', style: estilo, center: [-3.69, 40.43], zoom: 10.2,
+    attributionControl: false,
+  });
+  window.mapa = mapa;   // para depurar desde la consola del navegador
+  mapa.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right');
+  mapa.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-right');
+  mapa.addControl(new maplibregl.AttributionControl({
+    compact: true,
+    customAttribution: 'Mapa base: <a href="https://openfreemap.org" target="_blank">OpenFreeMap</a> © <a href="https://www.openmaptiles.org/" target="_blank">OpenMapTiles</a>, data © <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap contributors</a> · Datos: Xamfrà',
+  }), 'bottom-right');
+  // Los fallos de teselas del mapa base no rompen nada: se avisan en la consola sin ruido.
+  mapa.on('error', e => console.warn('Mapa:', e.error?.message ?? e));
+
+  await new Promise(resolve => mapa.on('load', resolve));
+
+  // Las capas de datos van debajo de los rótulos del mapa base, para que se lean los nombres.
+  const primerRotulo = mapa.getStyle().layers.find(l => l.type === 'symbol')?.id;
+
+  // Secciones: relleno (coropletas), bordes finos y resalte de la sección pulsada.
+  mapa.addSource('secciones', { type: 'geojson', data: secciones });
+  mapa.addLayer({ id: 'secciones-relleno', type: 'fill', source: 'secciones',
+    paint: { 'fill-color': COLOR_SIN_DATO, 'fill-opacity': 0.82 } }, primerRotulo);
+  mapa.addLayer({ id: 'secciones-borde', type: 'line', source: 'secciones', minzoom: 11,
+    paint: { 'line-color': '#ffffff', 'line-width': ['interpolate', ['linear'], ['zoom'], 11, 0.2, 15, 1], 'line-opacity': 0.7 } }, primerRotulo);
+  mapa.addLayer({ id: 'secciones-resalte', type: 'line', source: 'secciones', filter: ['==', ['get', 'codigo_seccion'], ''],
+    paint: { 'line-color': '#0b0b0b', 'line-width': 2 } }, primerRotulo);
+
+  // Suelo de actividad en transición: un solo color, tres estilos de línea (no depende solo del color).
+  const colorActividad = getComputedStyle(document.documentElement).getPropertyValue('--actividad').trim();
+  mapa.addSource('actividad', { type: 'geojson', data: actividad });
+  mapa.addLayer({ id: 'actividad-relleno', type: 'fill', source: 'actividad', layout: { visibility: 'none' },
+    paint: { 'fill-color': colorActividad, 'fill-opacity': 0.06 } }, primerRotulo);
+  mapa.addLayer({ id: 'actividad-halo', type: 'line', source: 'actividad', layout: { visibility: 'none' },
+    filter: ['in', ['get', 'clase'], ['literal', ['in_transition', 'ready_no_plan']]],
+    paint: { 'line-color': '#ffffff', 'line-width': 5 } }, primerRotulo);
+  mapa.addLayer({ id: 'actividad-resto', type: 'line', source: 'actividad', layout: { visibility: 'none' },
+    filter: ['!', ['in', ['get', 'clase'], ['literal', ['in_transition', 'ready_no_plan']]]],
+    paint: { 'line-color': colorActividad, 'line-width': 1, 'line-opacity': 0.8 } }, primerRotulo);
+  mapa.addLayer({ id: 'actividad-transicion', type: 'line', source: 'actividad', layout: { visibility: 'none' },
+    filter: ['==', ['get', 'clase'], 'in_transition'], paint: { 'line-color': colorActividad, 'line-width': 3 } }, primerRotulo);
+  mapa.addLayer({ id: 'actividad-sin-plan', type: 'line', source: 'actividad', layout: { visibility: 'none' },
+    filter: ['==', ['get', 'clase'], 'ready_no_plan'], paint: { 'line-color': colorActividad, 'line-width': 3, 'line-dasharray': [2, 1] } }, primerRotulo);
+
+  // PAU: contorno naranja discontinuo con halo blanco.
+  const colorPau = getComputedStyle(document.documentElement).getPropertyValue('--pau').trim();
+  mapa.addSource('pau', { type: 'geojson', data: pau });
+  mapa.addLayer({ id: 'pau-relleno', type: 'fill', source: 'pau', paint: { 'fill-color': colorPau, 'fill-opacity': 0.05 } }, primerRotulo);
+  mapa.addLayer({ id: 'pau-halo', type: 'line', source: 'pau', paint: { 'line-color': '#ffffff', 'line-width': 4.5 } }, primerRotulo);
+  mapa.addLayer({ id: 'pau-linea', type: 'line', source: 'pau', paint: { 'line-color': colorPau, 'line-width': 2.5, 'line-dasharray': [2, 1] } }, primerRotulo);
+
+  // Estaciones: puntos negros con borde blanco, encima de todo.
+  mapa.addSource('estaciones', { type: 'geojson', data: estaciones });
+  mapa.addLayer({ id: 'estaciones', type: 'circle', source: 'estaciones',
+    paint: { 'circle-color': '#0b0b0b', 'circle-radius': ['interpolate', ['linear'], ['zoom'], 9, 2.5, 14, 6],
+             'circle-stroke-color': '#ffffff', 'circle-stroke-width': 1.5 } });
+
+  anadirCapasPropias(mapa);
+
+  // Selector de variables, agrupado por tema.
+  const selector = document.getElementById('selector');
+  const temas = [...new Set(VARIABLES.map(v => v.tema))];
+  selector.innerHTML = temas.map(t => `<optgroup label="${t}">${VARIABLES.filter(v => v.tema === t)
+    .map(v => `<option value="${v.id}">${v.etiqueta}</option>`).join('')}</optgroup>`).join('');
+  selector.value = VARIABLE_INICIAL;
+
+  let variableActiva = null;
+  function aplicarVariable(id) {
+    variableActiva = VARIABLES.find(v => v.id === id);
+    const clases = clasesDe(variableActiva, secciones.features);
+    mapa.setPaintProperty('secciones-relleno', 'fill-color', expresionColor(variableActiva, clases));
+    pintarLeyenda(variableActiva, clases);
+  }
+  selector.addEventListener('change', () => aplicarVariable(selector.value));
+  aplicarVariable(selector.value);
+
+  // Casillas de capas.
+  const grupos = {
+    'ver-pau': ['pau-relleno', 'pau-halo', 'pau-linea'],
+    'ver-actividad': ['actividad-relleno', 'actividad-halo', 'actividad-resto', 'actividad-transicion', 'actividad-sin-plan'],
+    'ver-estaciones': ['estaciones'],
+  };
+  for (const [casilla, capas] of Object.entries(grupos)) {
+    const input = document.getElementById(casilla);
+    const aplicar = () => capas.forEach(c => mapa.setLayoutProperty(c, 'visibility', input.checked ? 'visible' : 'none'));
+    input.addEventListener('change', aplicar);
+    aplicar();
+  }
+
+  // Clic: se abre lo que esté dibujado más arriba (estación > PAU > suelo de actividad > sección).
+  const popup = new maplibregl.Popup({ maxWidth: '360px' });
+  mapa.on('click', e => {
+    const visibles = ['estaciones', 'actividad-relleno', 'pau-relleno', 'secciones-relleno']
+      .filter(id => mapa.getLayoutProperty(id, 'visibility') !== 'none');
+    const f = mapa.queryRenderedFeatures(e.point, { layers: visibles })[0];
+    if (!f) return;
+    const p = f.properties;
+    let html;
+    if (f.layer.id === 'estaciones') {
+      html = popupCapa(p.nombre, p.operadores, p, CAMPOS_ESTACION,
+        'Suelo vacante: Comunidad de Madrid, Suelo Vacante y Ocupado 2026 (CC BY 4.0). Salidas: Powered by CRTM, Renfe Data. Círculos solapados: no se suman entre estaciones.');
+    } else if (f.layer.id === 'actividad-relleno') {
+      html = popupCapa(p.nombre, `${p.municipio} · ${p.codigo_planeamiento ?? ''}`, p, CAMPOS_ACTIVIDAD,
+        'Xamfrà, método propio sobre planeamiento refundido 2025 (Comunidad de Madrid), PGOUM 97 y VEDA (Ayuntamiento de Madrid), CC BY 4.0, y Catastro. No dice que se pueda recalificar.');
+    } else if (f.layer.id === 'pau-relleno') {
+      html = popupCapa(p.name, p.municipality, p, CAMPOS_PAU,
+        'Ayuntamiento de Madrid (VEDA jul. 2026, PGOUM 97) y Comunidad de Madrid (refundido 2025, suelo vacante 2026), CC BY 4.0. Selección PAU: Xamfrà (conservadora).');
+    } else {
+      html = popupSeccion(p, variableActiva);
+      mapa.setFilter('secciones-resalte', ['==', ['get', 'codigo_seccion'], p.codigo_seccion]);
+    }
+    popup.setLngLat(e.lngLat).setHTML(html).addTo(mapa);
+  });
+  for (const id of ['estaciones', 'actividad-relleno', 'pau-relleno', 'secciones-relleno']) {
+    mapa.on('mouseenter', id, () => { mapa.getCanvas().style.cursor = 'pointer'; });
+    mapa.on('mouseleave', id, () => { mapa.getCanvas().style.cursor = ''; });
+  }
+
+  document.body.dataset.estado = 'listo';   // señal para las pruebas automáticas
+}
+
+iniciar().catch(err => {
+  console.error(err);
+  const aviso = document.getElementById('aviso-fondo');
+  aviso.textContent = String(err.message ?? err);
+  aviso.style.display = 'block';
+});
+</script>
+</body>
+</html>
