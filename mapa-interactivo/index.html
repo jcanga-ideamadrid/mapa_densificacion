@@ -111,7 +111,7 @@
     <fieldset>
       <legend>Capas</legend>
       <label class="capa"><input type="checkbox" id="ver-pau" checked><span class="linea" style="border-color: var(--pau-contorno); border-top-style: dashed"></span>PAU (en curso y acabados) y urbanizable programado</label>
-      <label class="capa"><input type="checkbox" id="ver-actividad"><span class="linea" style="border-color: var(--actividad)"></span>Suelo de actividad en transición</label>
+      <label class="capa"><input type="checkbox" id="ver-actividad" checked><span class="linea" style="border-color: var(--actividad)"></span>Suelo de actividad en transición</label>
       <div class="sublista">
         <div><span class="linea" style="border-color: var(--actividad)"></span>En transición (planeamiento en marcha)</div>
         <div><span class="linea" style="border-color: var(--actividad-envejecido); border-top-style: dashed"></span>Envejecido y junto a estación, sin planeamiento</div>
@@ -155,7 +155,7 @@ const PALETA = ['#86b6ef', '#3987e5', '#256abf', '#184f95', '#0d366b'];
 const COLOR_SIN_DATO = '#d9d7d0';
 
 // Variable que se ve al abrir.
-const VARIABLE_INICIAL = 'densidad_hab_km2';
+const VARIABLE_INICIAL = 'indice_idoneidad';
 
 // Una entrada por variable de secciones.geojson.
 //   id          nombre de la columna (igual que en el CSV)
@@ -277,7 +277,7 @@ function clasesDe(variable, features) {
 
   if (variable.id === 'indice_idoneidad') {
     const cortes = [20, 40, 60, 80];
-    const colores = ['#ffffff', ...PALETA.slice(1)];
+    const colores = ['#c3dbf7', ...PALETA.slice(1)];
     const etiquetas = ['0–20', '20–40', '40–60', '60–80', '80–100'];
     const recuento = new Array(5).fill(0);
     for (const x of valores) recuento[cortes.filter(c => x >= c).length]++;
